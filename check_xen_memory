@@ -1,0 +1,18 @@
+#!/bin/bash
+
+
+        memTotal_m=$(xl info | grep total_memory | awk '{print $3}')
+		memFree_m=$(xl info  | grep free_memory  | awk '{print $3}')
+        memUsed_m=$(($memTotal_m-$memFree_m))
+      
+        memUsedPrc=`echo $((($memUsed_m*100)/$memTotal_m))||cut -d. -f1`
+        if [ "$memUsedPrc" -ge 97 ]; then
+                echo "Memory: CRITICAL Total: $memTotal_m MB - Free: $memFree_m MB - $memUsedPrc% used!|TOTAL=$memTotal_m;;;; USED=$memUsed_m;;;;"
+                exit 2
+        elif [ "$memUsedPrc" -ge 93 ]; then
+                echo "Memory: WARNING Total: $memTotal_m MB - Free: $memFree_m MB - $memUsedPrc% used!|TOTAL=$memTotal_m;;;; USED=$memUsed_m;;;;"
+                exit 1
+        else
+                echo "Memory: OK Total: $memTotal_m MB - Free: $memFree_m MB - $memUsedPrc% used|TOTAL=$memTotal_m;;;; USED=$memUsed_m;;;;"
+                exit 0
+        fi

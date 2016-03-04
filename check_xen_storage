@@ -1,0 +1,47 @@
+#!/bin/bash
+while [ $# -gt 0 ]
+do
+  case $1
+  in
+    -H)
+      HOST=$2
+      shift 2
+    ;;
+
+
+    -p)
+      NAME=$2
+      shift 2
+    ;;
+
+
+    *)
+      echo "The arguments to use are"
+      echo "-p: Storage pool name"
+      shift 1
+      exit 0
+    ;;
+  esac
+done
+RETURN=0
+unit=g
+DATA=$(vgs --units $unit   --nosuffix  --noheadings  -o vg_name,vg_size,vg_free | grep -w "$NAME")
+if [ $? -ne 0 ]; then
+       echo "Unknown - No strage pool with name $NAME"
+       exit 3
+    fi
+Total_g=`echo $DATA | awk '{print $2}'`
+Free_g=`echo $DATA | awk '{print $3}'` 
+Used_g=$(echo "$Total_g-$Free_g" | bc)
+UsedPrc=`echo $(echo "(($Used_g*100)/$Total_g)"| bc)|cut -d. -f1`
+if [ "$UsedPrc" -ge 98 ]; then
+                echo "Storage pool $NAME: CRITICAL Total: $Total_g $unit - Free: $Free_g $unit - $UsedPrc% used!|TOTAL=$Total_g;;;; USED=$Used_g;;;;"
+                exit 2
+        elif [ "$UsedPrc" -ge 96 ]; then
+                echo "Storage pool $NAME : WARNING Total: $Total_g $unit - Free: $Free_g $unit - $UsedPrc% used!|TOTAL=$Total_g;;;; USED=$Used_g;;;;"
+                exit 1
+        else
+                echo "Storage pool $NAME  : OK Total: $Total_g $unit - Free: $Free_g $unit - $UsedPrc% used|TOTAL=$Total_g;;;; USED=$Used_g;;;;"
+                exit 0
+        fi
+

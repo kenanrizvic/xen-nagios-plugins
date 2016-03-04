@@ -1,0 +1,56 @@
+#!/bin/sh
+while [ $# -gt 0 ]
+do
+  case $1
+  in
+    -H)
+      HOST=$2
+      shift 2
+    ;;
+
+
+    -m)
+      NAME=$2
+      shift 2
+    ;;
+
+    *)
+      echo "The arguments to use are"
+      echo "-m: Virtual Machine Name "
+      shift 1
+      exit 0
+    ;;
+  esac
+done
+RETURN=0
+
+DATAPREP=`virsh dominfo $NAME 2>&1`
+ERROR=`echo $DATAPREP |head -1 | grep error `
+if [ -n "$ERROR" ]; then
+       echo "Unknown - Virtual machine $NAME does not exist"
+       exit 3
+    fi
+PERF=$DATAPREP
+STORAGE=`lvs  -o lv_path,lv_size --units g| grep  "$(virsh domblklist $NAME | grep dev  | awk '{print $2" "}'  )"`
+STORAGE_SUM=`echo -e  "$STORAGE" | awk '{print $2}'  | awk -Fg '{sum+=$1 } END {print sum}'`
+PERF=$PERF"\nstorage:\n"$STORAGE
+CPU=`echo -e "$DATAPREP" | grep "CPU(s)" | awk '{print $2}'`
+MEM=`echo -e "$DATAPREP" | grep "Used memory" | awk '{$3/=1024;printf "%.0fMB",$3}'`
+VIRT=`echo -e "$DATAPREP" | grep "OS Type" | awk '{print $3}'`
+MACHINE_DETAIL="(VCPU#: $CPU, MEM: $MEM, DISK: $STORAGE_SUM GB, VMODE: $VIRT )"
+DATA=`echo -e "$DATAPREP" | grep State | awk '{print $2}'`
+if [ "$DATA" == "shut" ]; then 
+echo -e "Critical - Virtual machine $NAME $MACHINE_DETAIL is Shutoff|\n$PERF"
+exit 2
+fi
+if [[ $DATA == "running" ]] || [[ $DATA == "idle" ]]; then
+        echo -e "OK - Virtual machine $NAME $MACHINE_DETAIL is Up in state $DATA |\n$PERF"
+        exit 0
+   fi
+if [[ $DATA == "paused" ]] || [[ $DATA == "saved" ]]; then
+        echo -e "Warning - Virtual machine $NAME $MACHINE_DETAIL in state $DATA |\n$PERF"
+        exit 1
+   fi
+
+echo ":$TYPE:$HOST:$WARN:$CRIT:"
+echo 3

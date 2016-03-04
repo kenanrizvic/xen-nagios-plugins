@@ -1,0 +1,42 @@
+this is set of plugins i made for using for xen monitoring.
+Requires:
+root or sudo with no password for commands :virsh , xentop, xm, xl, lvs, pvs
+
+
+set this on dest nagios user in sudoers.d :
+
+$/etc/sudoers.d# cat nagios_xen 
+Host_Alias HOST = stavihostname
+
+Cmnd_Alias XM    = /usr/sbin/xm , /usr/sbin/xl, /usr/bin/virsh,/usr/sbin/xentop,/sbin/lvs,/sbin/pvs
+Cmnd_Alias CHECK    = /home/nagios/check_xen , /home/nagios/check_xen_memory , /home/nagios/check_xen_storage
+
+nagios HOST=(root) NOPASSWD:XM,CHECK
+--------------------------------------
+
+chmod 0440 nagios_xen
+and delete
+Defaults    requiretty
+from  etc/sudoers using visudo
+
+
+usage:
+
+check_xen -m name_vm
+return status of domU machine and in performance part all details of machine
+
+
+check_xen_cpu -a cpuload   
+thank to Henning Sprang, sprang@silpion.de, i just modified some details in cpuload pattern 
+Returns cumulative info about cpu cumulative usage on xen host
+
+
+
+check_xen_memory
+return info about cumulative memory usage of xen host
+
+
+check_xen_storage -p storage_pool
+retrun info about storage pool on xen host
+
+All commands have -h swith to give more info about avaiable warning/critical tresholds

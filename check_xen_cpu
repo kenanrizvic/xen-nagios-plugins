@@ -1,0 +1,359 @@
+#!/usr/bin/env python
+
+# nagios_xen_plugin.py - Nagios plugin to check Xen status
+#
+#
+# This program is free software; you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation; either version 2 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Library General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.
+
+# Copyright 2006 Henning Sprang, sprang@silpion.de
+# Development sponsored by Silpion IT Solutions GmbH http://www.silpion.de
+#
+# Version: 0.2
+#
+#
+import sys
+import string
+import getopt
+
+
+
+class NagiosXenPlugin:
+    """This class is responsible to collect Xen runtime data on a Xen Dom0 host and return status information
+    as it's required by nagios to report service status.
+   
+    This is a work-in-progress script written in the research for the Book
+    "Xen - Virtualisierung unter Linux".
+    As the many TODO's tell, there's many, but small things to do to get import pieces
+    of information about the state of a Xen Server.
+
+    Currently, it just checks for the cpu usage and returns an error when it's 100%.
+
+    Call and use it as any other Nagios plugin. Still, the user calling the script must be in the sudoers
+    file.
+
+    see http://nagiosplug.sourceforge.net/developer-guidelines.html for details about the interface that is expected from 
+    Nagios plugins.
+    
+    
+    TODO: add unit tests
+    TODO: use xenApi to get data!
+    
+    TODO: cpu load calculation can be optimized:
+    - we either want to know if all cpu's together are at a given level when the overall load is divided
+      by the number of cpus
+    - and we want to know if one single physical cpu is above some limit
+    - and we want to know of one defined virtual cpu is above some limit
+    
+    Additional Functionality:
+    
+    Local functions to be requested via nagios nrpe:
+    TODO: calculate network saturation per physical net device (hmm, really xen specfic?)
+    TODO: parse xm list --long output and check arbitrary data from there according to input
+          -> sxp.py has code for parsing s-expressions!
+    TODO: check xenmon data and check it's status
+    TODO: check other data from the xen python api
+    TODO: check data from xen /proc and /dev unix interface
+    
+    remote data client functions (maybe to be placed in an extra plugin:
+    TODO: check remote libvirt data
+    TODO: check remote xml-rpc interface data
+    TODO: check remote s-expression interface data
+        
+    """
+    version = '0.3'
+    
+    # nagios return states
+    nagiosStateOk = 0
+    nagiosStateWarning = 1
+    nagiosStateCritical = 2
+    nagiosStateUnknown = 3
+    
+    allowedStates = (nagiosStateOk, nagiosStateWarning, nagiosStateCritical, nagiosStateUnknown)
+    
+    # action to actually run
+    action = ''
+
+    # possible actions
+    actionReturnInput = 'returnInput'
+    actionCheckTotalCpu = 'cpuload'
+
+    # TODO: check somewhere if given action is one of these
+    allowedActions = (actionReturnInput, actionCheckTotalCpu)
+    
+    # do we prepare putput for sending via send_nsca?
+    nsca = 0
+    
+    defaultAction = actionReturnInput
+    
+    debug=0
+    
+    # cpu load that triggers a warning
+    cpuWarning=85
+    
+    # cpus load that triggers a cirtical message
+    cpuCritical=95
+    
+    def printUsage(self):
+        """Print usage of this script."""
+        print 'Usage: %s [-v | --verbose] [ -h | --help] [[-a <ACTION> | --action <ACTION>] | <RETURNVALUE>]' % (sys.argv[0])
+    
+    def printHelp(self):
+        # TODO: check if this is up to date!
+        """Print help and exit with state unknown"""
+        print ''
+        self.printUsage()
+        print ''
+        print 'Dummy check to return the input values as nagios state code, or unknown if no'
+        print 'input, or an input not valid as nagios state is given.'
+        print ''
+        print 'Options:'
+        print '-v'
+        print '    print version'
+        print '-h, --help'
+        print '    print help message'
+        print '-d, --debug'
+        print '    print debugging output'
+        print '-a , --action'
+        print '    which check action to perform'
+        print '    Currently, only "cpuload" is possible, and returnInput as a dummy that'
+        print '    returns the input data - more to come'
+        print '-n --nsca'
+        print '    print output usable for nsca'
+        # TODO: these are not yet used
+        print 'TODO: -c --critical'
+        print '    minValue for critical state'
+        print 'TODO: -w, --warning'
+        print '    value for warning state'
+        # currently, existing checks exit with warning/critical when the given 
+        # values are exceeded - later, for some checks, we want to check if given
+        # values are under-run
+        # we can use -m for minimal an -M for maximal checks then  
+        sys.exit(self.nagiosStateUnknown)
+    
+        
+    def parseCommandLine(self):
+        """Parse command line options and check for correct and allowed values.
+           see parser optiond for details"""
+
+        if self.debug:
+            print 'parsing command line "' + string.join(sys.argv[1:]) + '"'
+
+        # TODO: add more elegant option parsing with OptionParser (see servicemanager.py)
+        try:
+            #options, extraArgs = getopt.getopt(sys.argv[1:], 'H:C:t:vVh?', ['hostname=', 'community=', 'timeout=', 'verbose', 'version', 'help'])
+            options, extraArgs = getopt.getopt(sys.argv[1:], 'a:dvhn?', ['action=','debug','version', 'help', 'nsca'])
+        except getopt.GetoptError, errorStr:
+            print errorStr
+            self.printUsage()
+            sys.exit(self.nagiosStateUnknown)
+        
+        # check extraArgs for correctness
+        # TODO: this should be the method checkInput?!
+        
+        # only maximum one argument allowed        
+        if len(extraArgs) > 1:
+            #self.exitWrongUsage(extraArgs)
+            self.exitWrongUsage('more than one argument given')
+        # argument must be an integer
+        elif (len(extraArgs) == 1):
+            # convert to int, catch exception
+            try:
+                tmpInputReturnState = int(extraArgs[0])
+            except TypeError:
+                self.exitWrongUsage('input: ' + extraArgs[0] + ' - must input an integer')
+            # check if it is an allowed state
+            if( not tmpInputReturnState in self.allowedStates):
+                if self.debug:
+                    print 'one argument given but not one of the allowed states ' + string.join(str(self.allowedStates[0:]))
+                self.exitWrongUsage('input: ' + extraArgs[0] + ' - must input an integer valid as nagios state')
+            
+            self.inputReturnState = tmpInputReturnState
+
+            
+        elif len(extraArgs) == 1:
+            self.exitWrongUsage('one argument given but not one of the allowed states ' + string.join(str(self.allowedStates[0:])))
+        elif len(extraArgs) == 0 and len(options) == 0:
+            self.exitWrongUsage('nothing to do')
+        
+        # parse which action to execute
+        if self.debug:
+            print 'checking options and decide what to do'
+            
+        for opt, arg in options:
+            if opt in ('-v', '--version'):
+                # TODO: set action to printVersion instead of running here?
+                self.printVersion()
+            elif opt in ('-h', '--help'):
+                # TODO: set action to printHelp instead of running here?
+                self.printHelp()
+                
+            if opt in ('-a', '--action'):
+                # todo: check if action is allowed!
+                self.action = arg
+                
+            if opt in ('-n', '--nsca'):
+                self.nsca = 1
+            
+            if opt in ('-d', '--debug'):
+                self.debug=1
+                
+        if self.debug:
+            print 'after checking options for action to execute'
+
+        # set action to defaultAction if no other action set now
+        if self.action == '':
+            if self.debug:
+                print 'set default action'
+            self.action = self.defaultAction
+
+
+    def printVersion(self):
+        """print version and exit with unknown state"""
+        print sys.argv[0] + ' %s' % (self.version)
+        sys.exit(self.nagiosStateUnknown)
+    
+    def exitWrongUsage(self, message):
+        """exit with a message about wrong usage of this plugin"""
+        print message
+        self.printUsage()
+        sys.exit(self.nagiosStateUnknown)
+
+    def exitStateUnknown(self, message):
+            self.exitWithState(self.nagiosStateUnknown, 'Unknkown exit.' + message)
+        
+    def executeAction(self):
+        """execute the defined action"""
+        if self.action == self.actionReturnInput:
+            self.returnInput()
+        elif self.action == self.actionCheckTotalCpu:
+            self.checkTotalCpuLoad()
+        else:
+            self.exitStateUnknown('Unknown Action given')
+            
+    def returnInput(self):
+        """Return the single input argument meant for returning unchanged"""
+        print 'Returning inputState ' + str(self.inputReturnState)
+        # TODO: where did I place the input argument?
+        sys.exit(self.inputReturnState)
+        
+        
+    def checkTotalCpuLoad(self):
+        """check total cpu usage and return status according to allowed values
+        
+        TODO: adjust for multiple CPU's/Cores
+        
+        TODO: use libxenstat to get the data
+        """
+        
+        import os 
+
+        xentopOutput = os.popen('sudo xentop -b -i 2')
+        
+        if self.debug:
+            print xentopOutput
+        
+        dom0Count=0
+        
+        domains = list()
+        
+        for line in xentopOutput:
+            line = str(line)
+            if (line.startswith('  Domain-0')):
+                dom0Count=dom0Count+1
+            if dom0Count == 2:
+                domainData=line.split()
+                domains.append(domainData)
+                if self.debug:
+                    print domainData
+        
+        cpuSum = float(0)
+                
+        for domain in domains:
+            if self.debug:
+                print domain
+            cpuSum += float(domain[3])
+        if self.debug:
+            print cpuSum
+        
+        # divide by number of cpus
+	cpulall = os.popen('sudo xl info | grep nr_cpus ')
+	line2 = str(cpulall.read())
+	cpunumber = line2.split()
+	cpuall = int(cpunumber[2])
+        cpuSum = int(cpuSum / cpuall)
+	virtmode = os.popen('sudo xl info | grep virt_caps ')
+	line3 = str(virtmode.read())
+	virtmode_split = line3.split()
+	if len(virtmode_split) > 2:
+	    virtmode_string = virtmode_split[2]
+	else:
+	    virtmode_string = "pv"
+        
+        
+        # FIXME: maybe we should also collect stderr output and return this in case of problems?
+        
+        # FIXME: maybe we should take more samples to get a better average CPU usage 
+        # ( but then we'd really better use rrdtool?!)
+        
+        # TODO: return cpu load in a format useful for performance trends
+        
+        # TODO: put the state checking in an extra method
+        
+        # this is strange - most sure we have a failure in measuring
+        cpuInfo = str(cpuSum) + '% of '+str(cpuall)+' cpus '+str(virtmode_string)+' | TOTAL=' +  str(self.cpuCritical) + ';;;; USED=' + str(cpuSum) + ';;;;'
+        
+        if cpuSum == 0:
+            self.exitStateUnknown('Unknkown - total CPU load ' + str(cpuSum) + ' - this is a sign of failed measuring!')
+            
+        if cpuSum < self.cpuWarning:
+            self.exitWithState(self.nagiosStateOk, 'OK - total CPU load ' + cpuInfo)
+        
+        if cpuSum < self.cpuCritical:
+            self.exitWithState(self.nagiosStateWarning, 'Warning - total CPU load ' + cpuInfo)
+        
+        if cpuSum >= self.cpuCritical:
+            self.exitWithState(self.nagiosStateCritical, 'Critical - total CPU load ' + cpuInfo)
+        
+        self.exitStateUnknown('Unknkown - could not measure CPU load ' + str(cpuSum))
+        
+    
+    def run(self):
+        """Here we call the method that does the actual work"""
+        
+        # parse and check command line arguments
+        self.parseCommandLine()
+
+        # action should be defined if given and can be run
+        self.executeAction()
+        
+        # in case we didn't exit with a return value yet, we exit unknown
+        self.exitStateUnknown('Unknown internal error')
+
+    def exitWithState(self, state, message):
+        import socket
+        if self.nsca:
+            # FIXME: should we let the hostname and service name part do by the one calling this script?
+            # TODO: at least we should have a command line option to set a different name
+            print socket.gethostname()+ '\t' + 'xen-cpuload-passive' + '\t' + str(state) + '\t' + message
+            sys.exit(0)
+        
+        print message
+        sys.exit(state)
+        
+
+# run the main task if this is the main program
+if __name__ == "__main__":
+    plugin = NagiosXenPlugin()
+    plugin.run()
