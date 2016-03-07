@@ -292,7 +292,7 @@ class NagiosXenPlugin:
 	line2 = str(cpulall.read())
 	cpunumber = line2.split()
 	cpuall = int(cpunumber[2])
-        cpuSum = int(cpuSum / cpuall)
+        cpuSumInt = int(cpuSum / cpuall)
 	virtmode = os.popen('sudo xl info | grep virt_caps ')
 	line3 = str(virtmode.read())
 	virtmode_split = line3.split()
@@ -312,7 +312,7 @@ class NagiosXenPlugin:
         # TODO: put the state checking in an extra method
         
         # this is strange - most sure we have a failure in measuring
-        cpuInfo = str(cpuSum) + '% of '+str(cpuall)+' cpus '+str(virtmode_string)+' | TOTAL=' +  str(self.cpuCritical) + ';;;; USED=' + str(cpuSum) + ';;;;'
+        cpuInfo = str(cpuSumInt) + '% of '+str(cpuall)+' cpus '+str(virtmode_string)+' | TOTAL=' +  str(self.cpuCritical) + ';;;; USED=' + str(cpuSum) + ';;;;'
         
         if cpuSum == 0:
             self.exitStateUnknown('Unknkown - total CPU load ' + str(cpuSum) + ' - this is a sign of failed measuring!')
