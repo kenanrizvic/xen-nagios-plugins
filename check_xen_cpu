@@ -293,6 +293,8 @@ class NagiosXenPlugin:
 	cpunumber = line2.split()
 	cpuall = int(cpunumber[2])
         cpuSumInt = int(cpuSum / cpuall)
+	cpuSum = cpuSum / cpuall
+	cpuSumInt = int(cpuSum)
 	virtmode = os.popen('sudo xl info | grep virt_caps ')
 	line3 = str(virtmode.read())
 	virtmode_split = line3.split()
