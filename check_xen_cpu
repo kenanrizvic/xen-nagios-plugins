@@ -260,7 +260,9 @@ class NagiosXenPlugin:
         import os 
 
         xentopOutput = os.popen('sudo xentop -b -i 2')
-        
+        vmlist = os.popen('sudo virsh  list --all')
+        stringvmlist = str(vmlist.read()) 
+
         if self.debug:
             print xentopOutput
         
@@ -314,7 +316,7 @@ class NagiosXenPlugin:
         # TODO: put the state checking in an extra method
         
         # this is strange - most sure we have a failure in measuring
-        cpuInfo = str(cpuSumInt) + '% of '+str(cpuall)+' cpus '+str(virtmode_string)+' | TOTAL=' +  str(self.cpuCritical) + ';;;; USED=' + str(cpuSum) + ';;;;'
+        cpuInfo = str(cpuSumInt) + '% of '+str(cpuall)+' cpus '+str(virtmode_string)+' | '+ stringvmlist 
         
         if cpuSum == 0:
             self.exitStateUnknown('Unknkown - total CPU load ' + str(cpuSum) + ' - this is a sign of failed measuring!')
